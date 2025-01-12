@@ -571,42 +571,55 @@ Resources:
               awslogs-create-group: true
               mode: non-blocking
               max-buffer-size: 25m
+        - Name: "frontend-container"
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Prefix}-${Env}-frontend-service:latest'
+          PortMappings:
+            - ContainerPort: 4200
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub '/ecs/${Prefix}-${Env}-frontend-task'
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: frontend
+              awslogs-create-group: true
+              mode: non-blocking
+              max-buffer-size: 25m
 
-  ECSService:
-    Type: AWS::ECS::Service
-    DependsOn: ECSTaskDefinition
-    Properties:
-      Cluster: !Sub '${Prefix}-${Env}-ecs-cluster'
-      TaskDefinition: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${Prefix}-${Env}-backend-task'
-      ServiceName: !Sub '${Prefix}-${Env}-ecs-service'
-      SchedulingStrategy: REPLICA
-      DesiredCount: 1
-      AvailabilityZoneRebalancing: ENABLED
-      LoadBalancers:
-        - ContainerName: "backend-container"
-          ContainerPort: 3000
-          TargetGroupArn: !Ref ELBTargetGroup
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
-          SecurityGroups: 
-            - !Ref ContainerSecurityGroup
-          Subnets:        
-            - !Ref PublicSubnet1A
-            - !Ref PublicSubnet1B
-      PlatformVersion: LATEST
-      DeploymentConfiguration:
-        MaximumPercent: 200
-        MinimumHealthyPercent: 100
-        DeploymentCircuitBreaker:
-          Enable: true
-          Rollback: true
-      DeploymentController:
-        Type: ECS
-      ServiceConnectConfiguration:
-        Enabled: false
-      Tags: []
-      EnableECSManagedTags: true
+  # ECSService:
+  #   Type: AWS::ECS::Service
+  #   DependsOn: ECSTaskDefinition
+  #   Properties:
+  #     Cluster: !Sub '${Prefix}-${Env}-ecs-cluster'
+  #     TaskDefinition: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${Prefix}-${Env}-backend-task'
+  #     ServiceName: !Sub '${Prefix}-${Env}-ecs-service'
+  #     SchedulingStrategy: REPLICA
+  #     DesiredCount: 1
+  #     AvailabilityZoneRebalancing: ENABLED
+  #     LoadBalancers:
+  #       - ContainerName: "backend-container"
+  #         ContainerPort: 3000
+  #         TargetGroupArn: !Ref ELBTargetGroup
+  #     NetworkConfiguration:
+  #       AwsvpcConfiguration:
+  #         AssignPublicIp: ENABLED
+  #         SecurityGroups: 
+  #           - !Ref ContainerSecurityGroup
+  #         Subnets:        
+  #           - !Ref PublicSubnet1A
+  #           - !Ref PublicSubnet1B
+  #     PlatformVersion: LATEST
+  #     DeploymentConfiguration:
+  #       MaximumPercent: 200
+  #       MinimumHealthyPercent: 100
+  #       DeploymentCircuitBreaker:
+  #         Enable: true
+  #         Rollback: true
+  #     DeploymentController:
+  #       Type: ECS
+  #     ServiceConnectConfiguration:
+  #       Enabled: false
+  #     Tags: []
+  #     EnableECSManagedTags: true
 
   # API Gateway and associated resources
   ApiGatewayRestApi:

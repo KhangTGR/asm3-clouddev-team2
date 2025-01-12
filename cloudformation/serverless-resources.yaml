@@ -95,7 +95,7 @@ Resources:
               "Choices": [
                 {
                   "Variable": "$.email",
-                  "StringMatches": "@.*",
+                  "StringMatches": "*@*.*",
                   "Next": "CheckSubscriptionStatus"
                 }
               ],
