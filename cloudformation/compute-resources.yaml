@@ -268,6 +268,10 @@ Resources:
           ToPort: '80'
           SourceSecurityGroupId: !Ref ALBSecurityGroup
         - IpProtocol: tcp
+          FromPort: '4200'
+          ToPort: '4200'
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+        - IpProtocol: tcp
           FromPort: '3000'
           ToPort: '3000'
           SourceSecurityGroupId: !Ref ALBSecurityGroup
@@ -491,6 +495,20 @@ Resources:
       VpcId: !Ref VPC
       TargetType: ip
 
+  # Website Target Group
+  WebELBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: !Sub '${Prefix}-${Env}-alb-tg-web'
+      HealthCheckIntervalSeconds: 6
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 4200
+      Protocol: HTTP
+      UnhealthyThresholdCount: 2
+      VpcId: !Ref VPC
+      TargetType: ip
+
   # Application Load Balancer
   ElasticLoadBalancer:
     Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
@@ -510,6 +528,17 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref ELBTargetGroup
+      LoadBalancerArn: !Ref ElasticLoadBalancer
+      Port: '8080'
+      Protocol: HTTP
+
+  # HTTP Listener
+  WebHTTPElbListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebELBTargetGroup
       LoadBalancerArn: !Ref ElasticLoadBalancer
       Port: '80'
       Protocol: HTTP
@@ -596,12 +625,15 @@ Resources:
       TaskDefinition: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${Prefix}-${Env}-backend-task'
       ServiceName: !Sub '${Prefix}-${Env}-ecs-service'
       SchedulingStrategy: REPLICA
-      DesiredCount: 1
+      DesiredCount: 2
       AvailabilityZoneRebalancing: ENABLED
       LoadBalancers:
         - ContainerName: "backend-container"
           ContainerPort: 3000
           TargetGroupArn: !Ref ELBTargetGroup
+        - ContainerName: "frontend-container"
+          ContainerPort: 4200
+          TargetGroupArn: !Ref WebELBTargetGroup
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: ENABLED
