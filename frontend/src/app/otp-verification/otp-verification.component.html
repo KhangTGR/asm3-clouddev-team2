@@ -1,0 +1,38 @@
+<div class="flex items-center justify-center min-h-screen bg-gray-100">
+    <div class="w-full max-w-md p-8 space-y-8 bg-white rounded-lg shadow-md">
+      <div>
+        <h2 class="text-2xl font-bold text-center text-gray-900">OTP Verification</h2>
+        <p class="mt-2 text-center text-gray-600">The OTP code has been sent to your email. Please enter your OTP code to verify.</p>
+      </div>
+      <form [formGroup]="otpForm" (ngSubmit)="onSubmit()" class="mt-8 space-y-6">
+        <div class="rounded-md shadow-sm">
+          <div class="mb-4">
+            <label for="otp" class="block text-sm font-medium text-gray-700">OTP Code</label>
+            <input id="otp" formControlName="otp" type="text" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+            <div *ngIf="otpForm.get('otp')?.invalid && otpForm.get('otp')?.touched" class="text-red-500 text-sm mt-1">
+              <div *ngIf="otpForm.get('otp')?.errors?.['required']">OTP code is required.</div>
+              <div *ngIf="otpForm.get('otp')?.errors?.['minlength']">OTP code must be 6 characters long.</div>
+              <div *ngIf="otpForm.get('otp')?.errors?.['maxlength']">OTP code must be 6 characters long.</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <button type="submit" class="w-full px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Verify</button>
+        </div>
+      </form>
+      <div *ngIf="errorWarning" class="text-red-500 text-sm mt-4">
+        {{ errorWarning }}
+      </div>
+      <div class="mt-4">
+        <button (click)="goBackToLogin()" class="w-full px-4 py-2 text-white bg-gray-600 rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">Go Back to Login</button>
+      </div>
+    </div>
+  
+    <!-- Modal -->
+    <div *ngIf="showModal" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+      <div class="bg-white p-6 rounded-lg shadow-lg">
+        <h3 class="text-lg font-medium text-gray-900">Login Successful</h3>
+        <p class="mt-2 text-sm text-gray-600">You have successfully logged in. Redirecting to homepage...</p>
+      </div>
+    </div>
+  </div>

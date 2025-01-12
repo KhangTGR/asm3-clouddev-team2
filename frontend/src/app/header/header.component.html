@@ -1,0 +1,22 @@
+<header class="bg-indigo-600 text-white p-4">
+    <div class="container mx-auto flex justify-between items-center">
+      <div class="flex items-center">
+        <a [routerLink]="['/homepage']" class="mr-4">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7m-9 9v-6h4v6m-4 0H5a2 2 0 01-2-2v-7a2 2 0 012-2h3m10 0h3a2 2 0 012 2v7a2 2 0 01-2 2h-3m-4 0v-6m0 6h4"></path>
+          </svg>
+        </a>
+        <h1 class="text-2xl font-bold">Ticket Box</h1>
+      </div>
+      <div class="relative">
+        <button class="dropdown-button flex items-center focus:outline-none" (click)="toggleDropdown()">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+          </svg>
+        </button>
+        <div *ngIf="dropdownOpen" class="dropdown-menu absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-20">
+          <button (click)="logout()" class="block w-full text-left px-4 py-2 text-gray-800 hover:bg-gray-200">Logout</button>
+        </div>
+      </div>
+    </div>
+  </header>

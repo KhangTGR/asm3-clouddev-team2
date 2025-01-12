@@ -1,0 +1,568 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  Prefix:
+    Type: String
+    Description: Prefix for naming resources
+  Env:
+    Type: String
+    Description: Environment (e.g., dev, prod)
+  Role:
+    Type: String
+    Description: IAM role resources
+
+Resources:
+  # Messaging/Notification
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub "Ticketery"
+      FifoTopic: False
+      Tags: 
+        - Key: Name
+          Value: !Sub "${Prefix}-${Env}-app-notification"
+      TopicName: !Sub "${Prefix}-${Env}-app-notification"
+
+  # SNS Topic Policy to allow access from LabRole
+  SNSPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref SNSTopic
+      PolicyDocument: !Sub |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "__default_statement_ID",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Action": [
+                "SNS:GetTopicAttributes",
+                "SNS:SetTopicAttributes",
+                "SNS:AddPermission",
+                "SNS:RemovePermission",
+                "SNS:DeleteTopic",
+                "SNS:Subscribe",
+                "SNS:ListSubscriptionsByTopic",
+                "SNS:Publish"
+              ],
+              "Resource": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${Prefix}-${Env}-app-notification",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceOwner": "${AWS::AccountId}"
+                }
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "states.amazonaws.com",
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "SNS:GetTopicAttributes",
+                "SNS:SetTopicAttributes",
+                "SNS:AddPermission",
+                "SNS:RemovePermission",
+                "SNS:DeleteTopic",
+                "SNS:Subscribe",
+                "SNS:ListSubscriptionsByTopic",
+                "SNS:Publish"
+              ],
+              "Resource": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${Prefix}-${Env}-app-notification"
+            }
+          ]
+        }
+
+  # Step Functions State Machine for SNS subscription with email validation
+  StateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${Prefix}-${Env}-topic-subscription"
+      RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+      StateMachineType: EXPRESS
+      DefinitionString: !Sub |
+        {
+          "Comment": "State Machine to handle SNS subscription",
+          "StartAt": "ValidateInput",
+          "States": {
+            "ValidateInput": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.email",
+                  "StringMatches": "@.*",
+                  "Next": "CheckSubscriptionStatus"
+                }
+              ],
+              "Default": "InvalidInput"
+            },
+            "CheckSubscriptionStatus": {
+              "Type": "Task",
+              "Resource": "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${Prefix}-${Env}-check-subscription",
+              "ResultPath": "$.subscriptionStatus",
+              "Next": "SubscriptionDecision"
+            },
+            "SubscriptionDecision": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.subscriptionStatus.body.status",
+                  "StringEquals": "SUCCESS",
+                  "Next": "SubscriptionConfirmed"
+                },
+                {
+                  "Variable": "$.subscriptionStatus.body.status",
+                  "StringEquals": "FAIL",
+                  "Next": "Subscribe"
+                }
+              ]
+            },
+            "Subscribe": {
+              "Type": "Task",
+              "Parameters": {
+                "TopicArn": "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${Prefix}-${Env}-app-notification",
+                "Protocol": "email",
+                "Endpoint.$": "$.email"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:sns:subscribe",
+              "ResultPath": "$.subscriptionStatus",
+              "Next": "SubscriptionPending"
+            },
+            "SubscriptionPending": {
+              "Type": "Succeed",
+              "OutputPath": "$.subscriptionStatus"
+            },
+            "SubscriptionConfirmed": {
+              "Type": "Succeed",
+              "OutputPath": "$.subscriptionStatus.body"
+            },
+            "InvalidInput": {
+              "Type": "Fail",
+              "Error": "InvalidInputError",
+              "Cause": "Invalid email address provided."
+            }
+          }
+        }
+
+  # Lambda function to check if a user is subscribed to SNS topic
+  CheckSubscriptionLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Prefix}-${Env}-check-subscription"
+      Runtime: python3.9
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import os
+          
+          sns = boto3.client('sns')
+          
+          def lambda_handler(event, context):
+              try:
+                  email = event['email']
+                  topic_arn = os.environ['SNS_TOPIC_ARN']
+          
+                  response = sns.list_subscriptions_by_topic(
+                      TopicArn=topic_arn
+                  )
+          
+                  for subscription in response['Subscriptions']:
+                      if subscription['Endpoint'] == email:
+                          if subscription['SubscriptionArn'] == 'PendingConfirmation':
+                              return {
+                                  "statusCode": 200,
+                                  "body": {"status": "FAIL", "reason": "Subscription is not confirmed"}
+                              }
+                          elif subscription['SubscriptionArn'] == 'Deleted':
+                              return {
+                                  "statusCode": 200,
+                                  "body": {"status": "FAIL", "reason": "Subscription is deleted"}
+                              }
+                          else:
+                              return {
+                                  "statusCode": 200,
+                                  "body": {"status": "SUCCESS"}
+                              }
+          
+                  # Email not found in the topic's subscriptions
+                  return {
+                      "statusCode": 200,
+                      "body": {"status": "FAIL", "reason": "Email not subscribed"}
+                  }
+          
+              except Exception as e:
+                  return {
+                      "statusCode": 500,
+                      "body": json.dumps({"error": str(e)})
+                  }
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref SNSTopic
+      Timeout: 10
+
+  # Lambda function to send OTP
+  OTPLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Prefix}-${Env}-send-otp"
+      Runtime: python3.9
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import os
+
+          sns = boto3.client('sns')
+
+          def lambda_handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  email = body.get('email')
+                  otp = body.get('otp')
+
+                  if not email or not otp:
+                      return {
+                          "statusCode": 400,
+                          "headers": {
+                              "Access-Control-Allow-Origin": "*"
+                          },
+                          "body": json.dumps({"error": "Missing email or otp in request"})
+                      }
+
+                  message = f"Your OTP is: {otp}"
+                  response = sns.publish(
+                      TopicArn=os.environ['SNS_TOPIC_ARN'],
+                      Message=message,
+                      Subject="Your OTP Code",
+                      MessageAttributes={
+                          'email': {
+                              'DataType': 'String',
+                              'StringValue': email
+                          }
+                      }
+                  )
+
+                  return {
+                      "statusCode": 200,
+                      "headers": {
+                          "Access-Control-Allow-Origin": "*"
+                      },
+                      "body": json.dumps({"message": "OTP sent successfully", "response": response})
+                  }
+              except Exception as e:
+                  return {
+                      "statusCode": 500,
+                      "headers": {
+                          "Access-Control-Allow-Origin": "*"
+                      },
+                      "body": json.dumps({"error": str(e)})
+                  }
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref SNSTopic
+      Timeout: 10
+
+  # New S3 Bucket for Storing Event Images
+  EventBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${Prefix}-${Env}-event-images"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        IgnorePublicAcls: false
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - "*"
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+              - HEAD
+            AllowedHeaders:
+              - "*"
+            MaxAge: 3000
+      Tags:
+        - Key: Name
+          Value: !Sub "${Prefix}-${Env}-event-images"
+
+  # Bucket Policy
+  EventBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EventBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowPublicReadAccess
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${Prefix}-${Env}-event-images/*"
+          - Sid: AllowLambdaToUpload
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+            Action: "s3:PutObject"
+            Resource: !Sub "arn:aws:s3:::${Prefix}-${Env}-event-images/*"
+
+  # Lambda function to handle event image uploads
+  EventCreationLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Prefix}-${Env}-upload-event-image"
+      Runtime: python3.9
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import base64
+          import os
+          
+          s3 = boto3.client('s3')
+          
+          def lambda_handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  image_data = body.get('image')
+                  event_id = body.get('event_id')
+                  
+                  if not image_data or not event_id:
+                      return {
+                          "statusCode": 400,
+                          "body": json.dumps({"error": "Missing image data or event ID"})
+                      }
+                  
+                  # Decode the base64 image data
+                  image_bytes = base64.b64decode(image_data)
+                  file_name = f"{event_id}/image.png"
+                  
+                  # Upload the image to S3
+                  s3.put_object(
+                      Bucket=os.environ['EVENT_IMAGE_BUCKET'],
+                      Key=file_name,
+                      Body=image_bytes,
+                      ContentType='image/png'
+                  )
+                  
+                  return {
+                      "statusCode": 200,
+                      "body": json.dumps({"message": "Image uploaded successfully", "image_url": f"s3://{os.environ['EVENT_IMAGE_BUCKET']}/{file_name}"})
+                  }
+              except Exception as e:
+                  return {
+                      "statusCode": 500,
+                      "body": json.dumps({"error": str(e)})
+                  }
+      Environment:
+        Variables:
+          EVENT_IMAGE_BUCKET: !Ref EventBucket
+      Timeout: 10
+
+  # Lambda function to handle ticket QR code uploads
+  TicketCreationLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Prefix}-${Env}-upload-ticket-qr"
+      Runtime: python3.9
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import base64
+          import os
+          
+          s3 = boto3.client('s3')
+          
+          def lambda_handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  image_data = body.get('image')
+                  event_id = body.get('event_id')
+                  user_id = body.get('user_id')
+                  
+                  if not image_data or not event_id or not user_id:
+                      return {
+                          "statusCode": 400,
+                          "body": json.dumps({"error": "Missing QR code or event ID or user ID"})
+                      }
+                  
+                  # Decode the base64 image data
+                  image_bytes = base64.b64decode(image_data)
+                  file_name = f"{event_id}/tickets/{user_id}/image.png"
+                  
+                  # Upload the image to S3
+                  s3.put_object(
+                      Bucket=os.environ['EVENT_IMAGE_BUCKET'],
+                      Key=file_name,
+                      Body=image_bytes,
+                      ContentType='image/png'
+                  )
+                  
+                  return {
+                      "statusCode": 200,
+                      "body": json.dumps({"message": "Image uploaded successfully", "image_url": f"s3://{os.environ['EVENT_IMAGE_BUCKET']}/{file_name}"})
+                  }
+              except Exception as e:
+                  return {
+                      "statusCode": 500,
+                      "body": json.dumps({"error": str(e)})
+                  }
+      Environment:
+        Variables:
+          EVENT_IMAGE_BUCKET: !Ref EventBucket
+      Timeout: 10
+
+  # Pre-Signed URL creation
+  TicketPresignedUrlLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Prefix}-${Env}-get-ticket-presigned-url"
+      Runtime: python3.9
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import os
+          
+          s3 = boto3.client('s3')
+          
+          def lambda_handler(event, context):
+              try:
+                  # Parse the input parameters
+                  body = json.loads(event['body'])
+                  user_id = body.get('user_id')
+                  event_id = body.get('event_id')
+                  
+                  if not user_id or not event_id:
+                      return {
+                          "statusCode": 400,
+                          "body": json.dumps({"error": "Missing user_id or event_id"})
+                      }
+                  
+                  # Construct the S3 object key
+                  bucket_name = os.environ['EVENT_IMAGE_BUCKET']
+                  file_key = f"{event_id}/tickets/{user_id}/image.png"
+                  
+                  # Generate a pre-signed URL valid for 1 minute
+                  presigned_url = s3.generate_presigned_url(
+                      'get_object',
+                      Params={
+                          'Bucket': bucket_name,
+                          'Key': file_key
+                      },
+                      ExpiresIn=60
+                  )
+                  
+                  return {
+                      "statusCode": 200,
+                      "body": json.dumps({"presigned_url": presigned_url})
+                  }
+              except Exception as e:
+                  return {
+                      "statusCode": 500,
+                      "body": json.dumps({"error": str(e)})
+                  }
+      Environment:
+        Variables:
+          EVENT_IMAGE_BUCKET: !Ref EventBucket
+      Timeout: 10
+  
+  # DynamoDB table for user activity logs
+  UserActivityLogTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${Prefix}-${Env}-user-activity-logs"
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+
+  # Lambda function for storing activity logs into DynamoDB
+  ActivityLogLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${Prefix}-${Env}-log-user-activity"
+      Runtime: python3.9
+      Role: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+      Handler: index.lambda_handler
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import os
+          from datetime import datetime
+          
+          dynamodb = boto3.resource('dynamodb')
+          table_name = os.environ['ACTIVITY_LOG_TABLE']
+          table = dynamodb.Table(table_name)
+          
+          def lambda_handler(event, context):
+              try:
+                  # Parse the incoming JSON body
+                  body = json.loads(event['body'])
+                  user_id = body.get('user_id')
+                  activity = body.get('activity')
+                  extra_data = {k: v for k, v in body.items() if k not in ['user_id', 'activity']}
+                  
+                  if not user_id or not activity:
+                      return {
+                          "statusCode": 400,
+                          "body": json.dumps({"error": "Missing user_id or activity data"})
+                      }
+                  
+                  # Generate the timestamp
+                  timestamp = int(datetime.utcnow().timestamp())
+                  
+                  # Prepare item with mandatory fields and dynamic columns (extra_data)
+                  item = {
+                      'user_id': user_id,
+                      'timestamp': timestamp,
+                      'activity': activity,
+                      'extra_data': extra_data  # Storing extra data in a Map
+                  }
+                  
+                  # Insert activity log into DynamoDB
+                  table.put_item(Item=item)
+                  
+                  return {
+                      "statusCode": 200,
+                      "body": json.dumps({"message": "Activity logged successfully"})
+                  }
+              except Exception as e:
+                  return {
+                      "statusCode": 500,
+                      "body": json.dumps({"error": str(e)})
+                  }
+      Environment:
+        Variables:
+          ACTIVITY_LOG_TABLE: !Ref UserActivityLogTable
+      Timeout: 10

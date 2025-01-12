@@ -1,0 +1,34 @@
+<div class="container mx-auto p-4">
+  <h1 class="text-3xl font-bold mb-4 text-indigo-600">Events</h1>
+  <div class="relative">
+    <swiper-container slides-per-view="3" space-between="30" pagination class="mySwiper">
+      <swiper-slide *ngFor="let event of events">
+        <div class="p-4 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300">
+          <a [routerLink]="['/ticket', event.id]" class="block p-4 bg-gray-100 rounded-lg">
+            <img [src]="event.image_url || 'default-image.png'" alt="{{ event.name }}" class="w-full h-32 object-cover rounded-lg mb-4">
+            <h2 class="text-xl font-bold text-indigo-700">{{ event.name }}</h2>
+            <p class="mt-2 text-gray-700">{{ event.description }}</p>
+            <p class="mt-4 text-gray-600">Location: {{ event.location }}</p>
+            <p class="mt-4 text-gray-600">Date: {{ event.start_date | date:'medium' }} - {{ event.end_date | date:'medium' }}</p>
+          </a>
+        </div>
+      </swiper-slide>
+      <!-- Add pagination element -->
+      <div class="swiper-pagination"></div>
+    </swiper-container>
+  </div>
+
+  
+  <h2 class="text-2xl font-bold mt-8 mb-4 text-indigo-600">Tickets</h2>
+  <div class="space-y-4">
+    <div *ngFor="let ticket of tickets" class="p-4 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300">
+      <a [routerLink]="['/history-ticket', ticket.ticket_id]" class="block">
+        <h3 class="text-xl font-bold text-indigo-700">{{ ticket.event_name }}</h3>
+        <p class="mt-2 text-gray-700">Status: {{ ticket.status }}</p>
+        <p class="mt-4 text-gray-600">Price: {{ ticket.price | currency }}</p>
+        <p class="mt-2 text-gray-500">Date: {{ ticket.start_date | date:'medium' }} - {{ ticket.end_date | date:'medium' }}</p>
+        <p class="mt-2 text-gray-500">Location: {{ ticket.location }}</p>
+      </a>
+    </div>
+  </div>
+  </div>

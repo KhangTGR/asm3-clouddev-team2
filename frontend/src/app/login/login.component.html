@@ -1,0 +1,42 @@
+<div class="flex items-center justify-center min-h-screen bg-gray-100">
+    <div class="w-full max-w-md p-8 space-y-8 bg-white rounded-lg shadow-md">
+      <div>
+        <h2 class="text-2xl font-bold text-center text-gray-900">Login</h2>
+      </div>
+      <form [formGroup]="loginForm" (ngSubmit)="onSubmit()" class="mt-8 space-y-6">
+        <div class="rounded-md shadow-sm">
+          <div class="mb-4">
+            <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+            <input id="email" formControlName="email" type="email" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+            <div *ngIf="loginForm.get('email')?.invalid && loginForm.get('email')?.touched" class="text-red-500 text-sm mt-1">
+              <div *ngIf="loginForm.get('email')?.errors?.['required']">Email is required.</div>
+              <div *ngIf="loginForm.get('email')?.errors?.['email']">Invalid email format.</div>
+            </div>
+          </div>
+          <div class="mb-6 relative">
+            <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+            <div class="relative flex items-center">
+              <input id="password" [type]="showPassword ? 'text' : 'password'" formControlName="password" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+              <button type="button" class="absolute right-3 flex items-center" (click)="togglePasswordVisibility()">
+                <i [ngClass]="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'" class="text-gray-500"></i>
+              </button>
+            </div>
+            <div *ngIf="loginForm.get('password')?.invalid && loginForm.get('password')?.touched" class="text-red-500 text-sm mt-1">
+              <div *ngIf="loginForm.get('password')?.errors?.['required']">Password is required.</div>
+              <div *ngIf="loginForm.get('password')?.errors?.['minlength']">Password must be at least 8 characters long.</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <button type="submit" class="w-full px-4 py-2 text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Login</button>
+        </div>
+      </form>
+      <div *ngIf="errorWarning" class="text-red-500 text-sm mt-4">
+        {{ errorWarning }}
+      </div>
+      <div class="text-center mt-4">
+        <span class="text-gray-700">Don't have an account? </span>
+        <a [routerLink]="['/register']" class="text-indigo-600 hover:underline">Create one</a>
+      </div>
+    </div>
+
