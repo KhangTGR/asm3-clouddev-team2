@@ -1,92 +1,84 @@
-This applicaiton consists of frontend and backend. How they are deployed in AWS
-The attached architecture diagram provides a comprehensive visual representation of the described architecture. Key components and their interactions are labeled and color-coded for clarity. It demonstrates: 
+### **Application Architecture and Deployment Overview**
 
-Traffic flow from users through the ALB to the backend and frontend tasks. 
+This application consists of frontend and backend services, deployed on AWS infrastructure. The attached architecture diagram provides a detailed and visually organized representation of the architecture. Key components, their interactions, and roles are clearly labeled and color-coded for easy comprehension. 
 
-Integration between serverless components (API Gateway, Lambda functions, S3, DynamoDB, and SNS). 
+The diagram highlights:  
+1. **Traffic Flow**: User requests are routed through the Application Load Balancer (ALB) to the backend and frontend tasks.  
+2. **Serverless Integrations**: Event-driven workflows leveraging API Gateway, Lambda functions, S3, DynamoDB, and SNS.  
+3. **Subnet Isolation**: Secure separation of private and public subnets.  
+4. **Administrative Access**: Bastion Host facilitates secure developer access to private resources.  
 
-Secure isolation of private and public subnets. 
+This architecture adheres to AWS best practices for security, scalability, and maintainability. Below is a detailed breakdown of the architecture, categorized into Networking, Serverless, and Compute components.
 
-Administrative access via the Bastion Host. 
+---
 
-This architecture adheres to AWS best practices for security, scalability, and maintainability. 
+### **Networking**
 
-These sections outline the AWS services utilized in our project, organized into three primary components: Networking, Compute, and Serverless. The architecture is visually represented in the attached diagram, ensuring clarity on the relationships between services and their roles. 
+The networking setup is built around a single **Virtual Private Cloud (VPC)**, divided into **four subnets** for secure and efficient resource management:  
+1. **Public Subnets (2)**: Host internet-facing resources such as the ALB and Bastion Host (EC2).  
+2. **Private Subnets (2)**: Securely host resources like Amazon RDS for PostgreSQL and Amazon ElastiCache for Redis, isolated from direct internet access.  
 
-Networking 
+**Key Networking Components:**  
+- **Internet Gateway (IGW):** Provides internet access to resources in public subnets.  
+- **Route Tables:** Direct traffic between subnets and the IGW while isolating private subnet traffic.  
+- **Security Groups:**  
+  - **Load Balancer Security Group:** Routes user traffic to application tasks.  
+  - **Frontend/Backend Security Groups:** Restrict access to ALB traffic and inter-service communication.  
+  - **Database Security Group:** Allows secure access exclusively from application tasks.  
+  - **Bastion Host Security Group:** Facilitates secure administrative access to private resources like databases and caches.  
 
-The networking setup is structured around a single Virtual Private Cloud (VPC), which is divided into four subnets: 
+This robust networking design ensures secure, controlled access for both user-facing traffic and administrative activities, as depicted in the diagram.
 
-Two Public Subnets (Public Subnet 1 and 2): Used to deploy resources requiring internet access, such as the Application Load Balancer (ALB) and the Bastion Host (EC2). 
+---
 
-Two Private Subnets (DB Subnet 1 and 2): Reserved for secure resources, including Amazon RDS for PostgreSQL and Amazon ElastiCache for Redis, which do not require direct internet connectivity. 
+### **Serverless Components**
 
-Key components include: 
+The serverless architecture simplifies event-driven workflows and backend service management, leveraging a combination of AWS API Gateway, Lambda, S3, DynamoDB, and SNS.  
 
-Internet Gateway (IGW): Provides internet access to resources in the public subnets. 
+**Key API Gateway Routes and Workflows:**  
+1. **`/subscribe`**: Initiates a Step Functions workflow to validate user subscriptions to an SNS topic. Confirmation emails are sent via SNS when validated.  
+2. **`/send-otp`**: Invokes a Lambda function to generate and send OTP codes to user emails through SNS.  
+3. **`/create-event`**: Processes event images uploaded by users via Lambda, storing them securely in an S3 bucket.  
+4. **`/create-ticket`**: Generates QR codes for event registrations and saves them in an S3 bucket.  
+5. **`/get-qr-code`**: Fetches a time-limited pre-signed URL for secure access to QR codes stored in S3.  
+6. **`/log-activity`**: Logs user activities in DynamoDB for tracking and analytics purposes.  
 
-Route Tables: Manage the routing of traffic between the subnets and the internet gateway, isolating traffic between public and private subnets. 
+**Additional Serverless Components:**  
+- **Amazon S3**: Stores event images and QR codes securely, accessed through pre-signed URLs.  
+- **IAM Roles and Policies**: Follow the principle of least privilege, granting only necessary permissions to Lambda functions and other AWS services.  
 
-Security Groups: 
+These serverless components ensure efficient resource utilization and support highly scalable, event-driven workflows, as depicted in the upper right of the diagram.
 
-Load Balancer Security Group: Accepts incoming traffic from users and routes it to the application tasks. 
+---
 
-Frontend/Backend Application Security Group: Allows communication only from the ALB and between backend services as necessary. 
+### **Compute**
 
-Database Security Group: Permits secure access exclusively from the application tasks. 
+The compute layer uses **Amazon ECS (Elastic Container Service)** for deploying containerized applications, offering scalability and high availability.  
 
-Bastion Host Security Group: Grants administrative access for developers to connect to private resources, such as databases or caches, using the Bastion Host. 
+**Key Compute Components:**  
+1. **Frontend and Backend Services**: Deployed as ECS tasks with configurations defined in task definitions. Images are securely stored in Amazon ECR.  
+2. **Task Definitions**: Specify resource requirements (CPU, memory) for both frontend and backend services.  
+3. **Application Load Balancers (ALBs)**:  
+   - One ALB routes public-facing traffic to the frontend service.  
+   - Another ALB manages backend service traffic.  
 
-The networking setup ensures secure, controlled access for both user traffic and administrative activities, as depicted in the diagram. 
+**Database Layer:**  
+- **Amazon RDS (PostgreSQL):** Hosts the relational database securely in private subnets.  
+- **Amazon ElastiCache (Redis):** Provides in-memory caching to enhance performance.  
 
-Serverless 
+Both databases are protected with private security groups and their credentials are managed securely using AWS Secrets Manager.
 
-The serverless architecture handles event-driven workflows and backend services using Amazon API Gateway, AWS Lambda, and other serverless resources. API Gateway exposes six key routes, facilitating operations as outlined in the diagram: 
+**Administrative Access:**  
+- **Bastion Host (EC2):** A secure instance in a public subnet, granting developers restricted access to private resources for administrative purposes.  
 
-/subscribe: Triggers an AWS Step Functions workflow, which validates user subscriptions to an SNS (Simple Notification Service) Topic. This workflow integrates with a Lambda function for subscription checking and sends confirmation emails via SNS if necessary. 
+The compute layer ensures seamless traffic flow from the ALB to ECS tasks and secure interactions with the database layer, as shown in the diagram.
 
-/send-otp: Invokes a Lambda function to generate and send OTP codes to user emails through SNS. 
+---
 
-/create-event: Processes user-submitted event images via a Lambda function and stores them in an S3 Bucket. 
+### **Automation with AWS CloudFormation**
 
-/create-ticket: Generates and stores event registration QR codes in the S3 bucket, handled by a Lambda function. 
+The entire infrastructure is provisioned and managed using AWS CloudFormation templates. This approach ensures:  
+- **Repeatability**: Consistent resource deployment across environments.  
+- **Efficiency**: Single-operation deployment of the entire architecture.  
 
-/get-qr-code: Fetches a pre-signed URL for event ticket QR codes stored in the S3 bucket. The pre-signed URL is time-limited for secure access. 
-
-/log-activity: Logs user activities into Amazon DynamoDB for tracking and analytics. 
-
-Additional serverless components: 
-
-S3 Bucket: Stores event images and QR codes securely. The resources are accessed securely using pre-signed URLs. 
-
-IAM Roles and Policies: Ensure minimal required permissions for Lambda functions and other AWS services, adhering to the principle of least privilege. 
-
-The serverless workflow simplifies the architecture and efficiently manages resources, as depicted on the upper right of the diagram. 
-
-Compute 
-
-The compute layer is built around Amazon ECS (Elastic Container Service) for deploying containerized applications. The architecture includes: 
-
-Frontend and Backend Containers: Deployed as ECS tasks, with compute configurations defined in ECS Task Definitions. The container images are stored in Amazon ECR (Elastic Container Registry). 
-
-Task Definitions: Define resource requirements (e.g., CPU, memory) and other configurations for both the frontend and backend tasks. 
-
-Application Load Balancers (ALBs): Two ALBs are deployed: 
-
-One ALB serves as the public-facing endpoint for frontend requests. 
-
-The other ALB manages traffic to the backend services. 
-
-Database Layer: 
-
-Amazon RDS for PostgreSQL: Hosts the relational database, securely placed in private subnets. 
-
-Amazon ElastiCache for Redis: Serves as an in-memory cache to optimize performance. 
-
-Both database services are configured with private security groups and credentials securely stored in AWS Secrets Manager. 
-
-Bastion Host (EC2): A secure administrative instance placed in a public subnet to provide restricted access to private resources for developers. 
-
-The diagram clearly illustrates the compute workflow, showcasing how traffic flows through the ALB to the ECS services and securely communicates with the database layer.  
-
-Finally, the entire infrastructure is provisioned and managed using AWS CloudFormation templates. CloudFormation ensures repeatability and consistency, allowing us to deploy the architecture with a single operation
+---
