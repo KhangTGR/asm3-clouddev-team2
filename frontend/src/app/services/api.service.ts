@@ -1,5 +1,5 @@
 import { Injectable } from "@angular/core";
-import { environment } from "../../environments/enviroment";
+import { environment } from "../../environments/environment";
 import { HttpClient, HttpErrorResponse } from "@angular/common/http";
 import { catchError, Observable, tap, throwError } from "rxjs";
 import { CookieService } from "ngx-cookie-service";
@@ -12,7 +12,8 @@ export class ApiService {
     private apiUrl = environment.apiUrl;
     public email: string | null = null;
 
-    constructor(private http: HttpClient, private cookieService: CookieService) {}
+    constructor(private http: HttpClient, private cookieService: CookieService) {
+    }
 
     registerUser(data: { email: string, username: string, password: string }): Observable<any> {
         return this.http.post(`${this.apiUrl}/auth/register`, data)
