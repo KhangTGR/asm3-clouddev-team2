@@ -337,7 +337,7 @@ Resources:
 
   # Launch Template for Bastion Host
   BastionHostLaunchTemplate:
-    DependsOn: ECRepository
+    DependsOn: BackECRepository
     Type: 'AWS::EC2::LaunchTemplate'
     Properties:
       LaunchTemplateName: !Sub '${Prefix}-${Env}-bastion-template'
@@ -366,7 +366,7 @@ Resources:
             systemctl start docker || true
             systemctl enable docker
             aws ecr get-login-password --region ${AWS::Region} | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
-            git clone -b khang/features https://github.com/KhangTGR/asm3-clouddev-team2.git /tmp/CloudDeveloping
+            git clone https://github.com/KhangTGR/asm3-clouddev-team2.git /tmp/CloudDeveloping
             cd /tmp/CloudDeveloping/backend
             docker build -t ${Prefix}-${Env}-backend-service:latest .
             docker tag ${Prefix}-${Env}-backend-service:latest ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Prefix}-${Env}-backend-service:latest
@@ -387,14 +387,14 @@ Resources:
             aws s3 cp . s3://${Prefix}-${Env}-event-images --recursive
 
   # ECR Container Image
-  ECRepository:
+  FrontECRepository:
     Type: AWS::ECR::Repository
     Properties: 
       RepositoryName: !Sub '${Prefix}-${Env}-backend-service'
       ImageScanningConfiguration: 
         ScanOnPush: true
 
-  ECRepository:
+  BackECRepository:
     Type: AWS::ECR::Repository
     Properties: 
       RepositoryName: !Sub '${Prefix}-${Env}-frontend-service'
@@ -502,6 +502,7 @@ Resources:
       Name: !Sub '${Prefix}-${Env}-alb-tg-web'
       HealthCheckIntervalSeconds: 6
       HealthCheckTimeoutSeconds: 5
+      HealthCheckPath: "/regsiter"
       HealthyThresholdCount: 2
       Port: 4200
       Protocol: HTTP
@@ -521,6 +522,18 @@ Resources:
       SecurityGroups: 
         - !Ref ALBSecurityGroup
 
+  # Application Load Balancer
+  WebElasticLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: !Sub '${Prefix}-${Env}-alb-web'
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1A
+        - !Ref PublicSubnet1B
+      SecurityGroups: 
+        - !Ref ALBSecurityGroup
+
   # HTTP Listener
   HTTPElbListener:
     Type: 'AWS::ElasticLoadBalancingV2::Listener'
@@ -529,7 +542,7 @@ Resources:
         - Type: forward
           TargetGroupArn: !Ref ELBTargetGroup
       LoadBalancerArn: !Ref ElasticLoadBalancer
-      Port: '8080'
+      Port: '80'
       Protocol: HTTP
 
   # HTTP Listener
@@ -539,7 +552,7 @@ Resources:
       DefaultActions:
         - Type: forward
           TargetGroupArn: !Ref WebELBTargetGroup
-      LoadBalancerArn: !Ref ElasticLoadBalancer
+      LoadBalancerArn: !Ref WebElasticLoadBalancer
       Port: '80'
       Protocol: HTTP
 
@@ -558,7 +571,37 @@ Resources:
           Weight: 1
 
   # ECS Task Definition
-  ECSTaskDefinition:
+  FrontECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Prefix}-${Env}-front-task'
+      ExecutionRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+      TaskRoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${Role}"
+      NetworkMode: awsvpc
+      Cpu: '2048'
+      Memory: '4096'
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: "frontend-container"
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Prefix}-${Env}-frontend-service:latest'
+          PortMappings:
+            - ContainerPort: 4200
+          Environment:
+            - Name: API_URL
+              Value: !Sub "${ElasticLoadBalancer.DNSName}"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub '/ecs/${Prefix}-${Env}-frontend-task'
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: frontend
+              awslogs-create-group: true
+              mode: non-blocking
+              max-buffer-size: 25m
+
+  # ECS Task Definition
+  BackECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
       Family: !Sub '${Prefix}-${Env}-backend-task'
@@ -600,63 +643,7 @@ Resources:
               awslogs-create-group: true
               mode: non-blocking
               max-buffer-size: 25m
-        - Name: "frontend-container"
-          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Prefix}-${Env}-frontend-service:latest'
-          PortMappings:
-            - ContainerPort: 4200
-          Environment:
-            - Name: API_URL
-              Value: "http://backend-container:3000"
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-group: !Sub '/ecs/${Prefix}-${Env}-frontend-task'
-              awslogs-region: !Ref "AWS::Region"
-              awslogs-stream-prefix: frontend
-              awslogs-create-group: true
-              mode: non-blocking
-              max-buffer-size: 25m
 
-  ECSService:
-    Type: AWS::ECS::Service
-    DependsOn: BastionHostInstance
-    Properties:
-      Cluster: !Sub '${Prefix}-${Env}-ecs-cluster'
-      TaskDefinition: !Sub 'arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${Prefix}-${Env}-backend-task'
-      ServiceName: !Sub '${Prefix}-${Env}-ecs-service'
-      SchedulingStrategy: REPLICA
-      DesiredCount: 2
-      AvailabilityZoneRebalancing: ENABLED
-      LoadBalancers:
-        - ContainerName: "backend-container"
-          ContainerPort: 3000
-          TargetGroupArn: !Ref ELBTargetGroup
-        - ContainerName: "frontend-container"
-          ContainerPort: 4200
-          TargetGroupArn: !Ref WebELBTargetGroup
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: ENABLED
-          SecurityGroups: 
-            - !Ref ContainerSecurityGroup
-          Subnets:        
-            - !Ref PublicSubnet1A
-            - !Ref PublicSubnet1B
-      PlatformVersion: LATEST
-      DeploymentConfiguration:
-        MaximumPercent: 200
-        MinimumHealthyPercent: 100
-        DeploymentCircuitBreaker:
-          Enable: true
-          Rollback: true
-      DeploymentController:
-        Type: ECS
-      ServiceConnectConfiguration:
-        Enabled: false
-      Tags: []
-      EnableECSManagedTags: true
-
-  # API Gateway and associated resources
   ApiGatewayRestApi:
     Type: AWS::ApiGateway::RestApi
     Properties: 
