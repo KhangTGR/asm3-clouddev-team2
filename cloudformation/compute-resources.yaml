@@ -680,7 +680,7 @@ Resources:
         RequestTemplates:
           application/json: !Sub |
             {
-              "stateMachineArn": "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:topic-subscription",
+              "stateMachineArn": "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${Prefix}-${Env}-topic-subscription",
               "input": "{ \"email\": \"$input.params().querystring.get('email')\" }"
             }
         IntegrationResponses:
