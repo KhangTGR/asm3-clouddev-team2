@@ -379,6 +379,8 @@ Resources:
             export S3_BUCKET_URL="https://${Prefix}-${Env}-event-images.s3.${AWS::Region}.amazonaws.com"
             sh replace.sh
             PGPASSWORD=$DB_PASSWORD psql -h ${RDSPostgreSQLInstance.Endpoint.Address} -U $DB_USERNAME -d tickerydb -f events_modified.sql
+            cd ../images
+            aws s3 cp . s3://${Prefix}-${Env}-event-images --recursive
 
   # ECR Container Image
   ECRepository:
