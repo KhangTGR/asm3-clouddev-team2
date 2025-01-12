@@ -329,4 +329,3 @@ Common errors and their status codes:
 ## Notes
 - Ensure to replace placeholder URLs and tokens with actual values in production.
 - All requests that require authentication should include the JWT token in the Authorization header.
-

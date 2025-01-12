@@ -390,14 +390,14 @@ Resources:
   FrontECRepository:
     Type: AWS::ECR::Repository
     Properties: 
-      RepositoryName: !Sub '${Prefix}-${Env}-backend-service'
+      RepositoryName: !Sub '${Prefix}-${Env}-frontend-service'
       ImageScanningConfiguration: 
         ScanOnPush: true
 
   BackECRepository:
     Type: AWS::ECR::Repository
     Properties: 
-      RepositoryName: !Sub '${Prefix}-${Env}-frontend-service'
+      RepositoryName: !Sub '${Prefix}-${Env}-backend-service'
       ImageScanningConfiguration: 
         ScanOnPush: true
 
