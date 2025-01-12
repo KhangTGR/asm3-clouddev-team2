@@ -589,7 +589,7 @@ Resources:
             - ContainerPort: 4200
           Environment:
             - Name: API_URL
-              Value: !Sub "${ElasticLoadBalancer.DNSName}"
+              Value: !Sub "http://${ElasticLoadBalancer.DNSName}"
           LogConfiguration:
             LogDriver: awslogs
             Options:
